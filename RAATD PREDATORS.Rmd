@@ -1,0 +1,92 @@
+```{r LOAD LIBRARIES}
+library(raster)
+library(ncdf4)
+library(SOmap)
+library(RColorBrewer)
+```
+
+```{r LOAD BASEMAP AND COLORS}
+basemap = SOmap(bathy_legend = F, fronts = T, trim = -50)
+my.palette.oranges = brewer.pal(n = 9, name = "Oranges") 
+```
+
+```{r - Vérification}
+setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data/RAATD projections")
+bigmod = raster("mean_habitat_importance-colony_weighted.nc")
+plot(basemap)
+SOplot(bigmod, col = my.palette.oranges, legend = F)
+plot(basemap)
+SOplot(bigmod, col = my.palette.oranges, legend = F)
+raster_list[[13]]
+```
+
+```{r LOAD ENVI DATA}
+setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data/RAATD projections")
+files_names = list.files("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data/RAATD projections",pattern = ".nc$")
+raster_list = list()
+for (i in seq_along(files_names)) {
+  raster_list[[i]] = raster(files_names[i])
+}
+plot(raster_list[[1]])
+```
+
+```{r THRESHOLDING}
+seuil <- 50
+extent <- extent(-180, 180, -80, -50)
+raster_thresholded_list <- list()
+
+for (i in seq_along(raster_list)) {
+  raster_thresholded <- raster_list[[i]]
+  raster_thresholded[raster_thresholded < seuil] <- NA
+  raster_thresholded <- crop(raster_thresholded, extent)
+  raster_thresholded_list[[i]] <- raster_thresholded
+}
+
+```
+
+```{r PLOTTING}
+par(mfrow = c(1, 1))
+
+for (i in seq_along(raster_thresholded_list):3) {
+  plot(basemap)
+  SOplot(raster_thresholded_list[[i]], col = my.palette.oranges[4:9], legend = F)
+  SOleg(raster_thresholded_list[[i]], position = "topright", col = my.palette.oranges[4:9], ticks = 5, rnd = 0,
+      type = "continuous", label = files_names[i])
+}
+
+```
+```{r OVERLAPPING}
+raster = raster_thresholded_list[[13]]
+# Define the desired resolution
+new_resolution <- 0.1  # Replace with the desired resolution in the units of your raster
+# Calculate the aggregation factor
+aggregation_factor <- ceiling(res(raster) / new_resolution)
+# Aggregate the raster to the new resolution
+raster_resampled <- aggregate(raster, fact = aggregation_factor, fun = mean)
+# Plot the modified raster
+plot(raster_resampled)
+
+{
+plot(basemap)
+SOplot(raster,col = my.palette.blue)
+SOplot(prey,col = my.palette.oranges)
+}
+
+overlap <- raster & prey
+# Calculate the percentage of overlap
+percentage_overlap <- (sum(overlap[], na.rm = TRUE) / sum(raster[], na.rm = TRUE)) * 100
+# Print the percentage of overlap
+print(percentage_overlap)
+# Plot the overlap region
+plot(basemap)
+SOplot(overlap, col = "red", main = "Overlap Region", legend = F)
+
+```
+
+
+
+
+
+
+
+
