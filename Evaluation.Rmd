@@ -1,0 +1,143 @@
+
+
+```{r CORRELATION}
+library(ncf)
+rsd = res
+rnd = sample(1:length(rsd), 500, replace=T)
+spat.cor = correlog(xy[rnd,1], xy[rnd,2], rsd[rnd], increment = 2, resamp = 10)
+par(mfcol =c(1,2))
+{
+plot(spat.cor$mean.of.class, spat.cor$correlation, ylim = c(-.005,.005),xlim = c(0,50), pch=16, col="firebrick3", ylab ="Correlation",xlab="Distance class", main="Spatial Correlogram", font.lab=2)
+lines(spat.cor$mean.of.class, spat.cor$correlation, col = "firebrick3")
+abline(0,0,col="grey50",lty=3)
+plot(xy[order(rsd),],pch=15, col = "firebrick3" ,cex=.3, main="Residuals",xlab="Latitude",ylab="Longitude", font.lab=2)
+par(mfcol=c(1,1))
+}
+```
+
+```{r SPATIAL AUTOCORRELATION}
+library(ape)
+xy <- data[, 2:3]
+dists <- as.matrix(dist(xy))
+dists.inv <- 1/dists
+diag(dists.inv) <- 0
+dists.inv[is.infinite(dists.inv)] <- max(dists[!is.infinite(dists)])
+res <- c(model_output$eval.stats$residuals[[1]])
+Moran.I(res, dists.inv)
+```
+
+```{r MODEL STATISTICS}
+# Créer une liste pour stocker les moyennes et variabilités des statistiques d'évaluation
+mean_sd_stats <- list()
+evaluation_stats <- c("AUC", "TSS", "COR")
+
+# Boucle for pour calculer la moyenne et la variabilité pour chaque statistique d'évaluation
+for (stat in evaluation_stats) {
+  # Initialiser une liste pour stocker les résultats de la statistique d'évaluation
+  stat_results <- list()
+  # Liste pour stocker les valeurs individuelles de la statistique d'évaluation pour chaque modèle
+  stat_values <- c()
+  # Boucle à travers chaque modèle
+  for (i in 1:length(BRTs)) {
+    # Récupérer la statistique d'évaluation pour le modèle i
+    eval_stat <- BRTs[[i]]$eval.stats[[stat]]
+    
+    # Ajouter la statistique à la liste des valeurs
+    stat_values <- c(stat_values, eval_stat)
+  }
+  # Calculer la moyenne de la statistique d'évaluation
+  mean_stat <- mean(stat_values)
+  # Calculer l'écart-type (variabilité) de la statistique d'évaluation
+  sd_stat <- sd(stat_values)
+  # Ajouter les résultats dans la liste
+  stat_results$mean <- mean_stat
+  stat_results$sd <- sd_stat
+  # Ajouter la liste des résultats à la liste des moyennes et variabilités
+  mean_sd_stats[[stat]] <- stat_results
+}
+
+# Afficher les moyennes et variabilités des statistiques d'évaluation
+for (stat in evaluation_stats) {
+  mean_val <- mean_sd_stats[[stat]]$mean
+  sd_val <- mean_sd_stats[[stat]]$sd
+  message(paste(stat, "=", round(mean_val, 2), "±", round(sd_val, 2)))
+}
+```
+
+```{r EXTRAPOLATION - MESS}
+# Extract environmental values at presence-only records location
+envi_scores = raster::extract(envi_data, data[,2:3]) 
+# Calculate MESS score
+x = dismo::mess(envi_data,envi_scores)
+y = x; values(y)= values(x)>0
+y = reclassify(y,cbind(FALSE,0)) # MODEL EXTRAPOLATES (MESS <0)
+y = reclassify(y,cbind(TRUE,1)) # MODEL DOES NOT EXTRAPOLATE (MESS >0)
+# remove land pixel (layer #1 = depth)
+MESS_layer = mask(y,subset(envi_data,1)) 
+{
+plot(basemap)
+SOplot (MESS_layer, col=c("grey","blue"), legend=F) 
+legend("bottomleft", legend=c("extrapolation","OK"),
+       col=c("grey","blue"),
+       pch=20, bg = "white", cex=0.8)
+}
+# Calculate the proportion of the area where extrapolation occurs
+MESS= reclassify(MESS_layer,cbind(1,NA))
+# compare the number of pixels = 0 to the number of total pixels of the area
+length(which(!is.na(values(MESS))))*100 / length(which(!is.na(values(subset(predictors_stack,1)))))
+```
+
+```{r EXTRAPOLATION - MESS SPLIT}
+# Create an empty raster to initiate a Rasterstack
+stack_amelio_MESS = subset(predictors_stack,1); values(stack_amelio_MESS) = NA 
+# Loop to calculate the value of dissimilarity of each environmental descriptor
+# For each pixel, it will be determined if extrapolation occurs for each environmental descriptor
+for (k in 1:nlayers(envi_data)){
+  presvals = raster::extract(subset(envi_data, k),
+                              data[,2:3])
+  x_amelio = dismo::mess(subset(envi_data, k),presvals)
+  stack_amelio_MESS = stack(stack_amelio_MESS,x_amelio) 
+}
+# Delete the first layer of the stack that was empty (initialization)
+stack_amelio_MESS = dropLayer(stack_amelio_MESS,1) 
+names(stack_amelio_MESS) = names(envi_data)
+# Search for the environmental layer that is responsible for the lower MESS score
+# (i.e. responsible for the extrapolation)
+MESS_amelio = which.min(stack_amelio_MESS)
+MESS_amelio = mask(MESS_amelio, MESS) # keep only areas where extrapolation occurs
+# Plot the result
+{
+plot(basemap)
+SOplot (MESS_amelio, col=palettemulticolor, legend=F) 
+points(worldmap, type="l")
+legend("bottomleft", legend=names(predictors_stack),
+       col=palettemulticolor, pch=20, bg = "white", cex=0.5)
+}
+```
+
+```{r SUITABLE AREA}
+# Binarize model predictions
+maxSSS = model_output$eval.stats$maxSSS
+{
+plot(basemap)
+SOplot(model_output$raster.prediction, col=c("lightblue","red"), breaks=c(0, maxSSS ,1), main="Prediction for cluster 1",
+     cex.axis= 0.7,
+     legend.width=0.5, legend.shrink=0.25,
+     legend.args=list(text="Distribution probability", side=3, font=2, cex=0.7)) 
+}
+# Extract predictions at BRTs data location
+location_presence_BRTs = data[as.factor(MyFold)==1,c(2,3)] 
+extracted_values = raster::extract(model_output$raster.prediction,location_presence_BRTs) 
+# Compare the values with the maxSSS value and evaluate the percentage of correctly classified presence BRTs data
+100* length (which(na.omit(extracted_values) >= maxSSS)) / length(na.omit(extracted_values))
+```
+
+```{r EXTRAPOLATION - CONTRIBUTIONS}
+# Calculate the contribution of each environmental descriptor in extrapolation
+table_mess_amelio = matrix(data=NA, nrow = 1, ncol= nlayers(envi_data)) 
+colnames(table_mess_amelio) =names(envi_data)
+for (k2 in 1:nlayers(envi_data)){
+  table_mess_amelio[1,k2] = length(which(values(MESS_amelio)==k2))*100/
+    length(which(!is.na(values(subset(envi_data,1))))) }
+table = data.frame(table_mess_amelio)
+```

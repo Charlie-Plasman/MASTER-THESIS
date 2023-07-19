@@ -1,0 +1,119 @@
+HSM NOTEBOOK 1 - MODELISATION
+MEMOIRE - PLASMAN CHARLIE
+2023
+
+```{r COLOR PALETTE}
+library(RColorBrewer)
+palettemulticolor = colorRampPalette(c("deepskyblue", "darkseagreen","lightgreen", "green","yellow","gold","orange", "red","firebrick"))(100)
+```
+
+```{r NULL MODELS}
+null_model1 = SDMPlay:::null.model(xy = data[,2:3],predictors = envi_data, type = 1, algorithm ="brt", nb = 1000, unique.data = T, same = T, nb.rep = 5, tc = 5,
+lr = 0.001, bf = 0.75)
+
+null_model2 = SDMPlay:::null.model(xy = data[,2:3],predictors = envi_data, type = 2, algorithm ="brt", nb = 1000, unique.data = T, same = T, nb.rep = 5, tc = 5,
+lr = 0.001, bf = 0.75)
+
+plot(basemap)
+SOplot(null_model1$pred.mean, col = my.palette.oranges)
+
+plot(basemap)
+SOplot(null_model2$pred.mean, col = my.palette.oranges)
+```
+
+```{r RANDOM CROSS-VALIDATION - LOOP}
+library(SDMPlay)
+setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data")
+
+# Choose the occurrence data (random/KDE)
+data <- HSMtable
+
+n_repeats <- 1  # Number of repetitions
+model_outputs <- vector("list", n_repeats)  # List to store the model outputs
+
+for (i in 1:n_repeats) {
+  model_output <- SDMPlay:::compute.brt(x = data, proj.predictors = envi_data,
+                              tc = 5, lr = 0.0005, bf = 0.75, n.trees = 500, step.size = 500)
+  model_outputs[[i]] <- model_output
+}
+
+# Initialize an empty list to store the raster predictions
+raster_predictions <- vector("list", length(model_outputs))
+
+# Extract raster predictions from each model output
+for (i in 1:length(model_outputs)) {
+  raster_predictions[[i]] <- model_outputs[[i]]$raster.prediction
+}
+
+# Create the stacked raster
+stack.pred <- stack(raster_predictions)
+
+# Calculate the average prediction
+average_pred <- calc(stack.pred, mean)
+
+plot(basemap)
+SOplot(average_pred, col = palettemulticolor)
+```
+
+```{r SPATIAL CROSS-VALIDATION (CLOCK 6) - LOOP}
+library(SDMPlay)
+setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data")
+
+# Choose the occurrence data (random/KDE)
+data <- HSMtable_KDE
+envi_data <- stack_linear
+
+n_repeats <- 5  # Number of repetitions
+model_outputs <- vector("list", n_repeats)  # List to store the model outputs
+
+for (i in 1:n_repeats) {
+  # Create replicates with different partitioning
+  idP <- which(data$id == 1)
+  partition_function <- SDMPlay:::clock2(data[idP, c("longitude", "latitude")], data[-idP, c("longitude", "latitude")])
+  MyFold <- rep(NA, nrow(data))
+  MyFold[idP] <- partition_function$occ.grp
+  MyFold[-idP] <- partition_function$bg.coords.grp
+  
+  {
+    plot(basemap)
+    SOplot(data[, c("longitude", "latitude")],
+           col = c("orange", "darkblue")[as.factor(MyFold)],
+           pch = 20)
+    SOleg(col = c("orange", "darkblue"), position = "topright",
+          tlabs = c("training", "test"), type = "discrete")
+  }
+  
+  model_output <- SDMPlay:::compute.brt(x = data, proj.predictors = envi_data,
+                              tc = 5, lr = 0.01, bf = 0.75, 
+                              n.trees = 500, step.size = 500,
+                              n.folds = 2,
+                              fold.vector = MyFold)
+  model_outputs[[i]] <- model_output
+}
+
+# Initialize an empty list to store the raster predictions
+raster_predictions <- vector("list", length(model_outputs))
+
+# Extract raster predictions from each model output
+for (i in 1:length(model_outputs)) {
+  raster_predictions[[i]] <- model_outputs[[i]]$raster.prediction
+}
+
+# Create the stacked raster
+stack.pred <- stack(raster_predictions)
+
+# Calculate the average prediction
+average_pred <- calc(stack.pred, mean)
+
+plot(basemap)
+SOplot(average_pred, col = palettemulticolor)
+```
+
+```{r SAVE}
+dir = "/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data"
+writeRaster(average_pred, filename=file.path(dir, "Myctophidae_NO_KDE_comparaison.nc"), format="CDF", overwrite=TRUE)
+setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data")
+prey = raster("Myctophidae_NO_KDE_comparaison.nc")
+plot(basemap)
+SOplot(prey, col = palettemulticolor)
+```

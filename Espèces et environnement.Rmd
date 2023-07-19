@@ -1,0 +1,76 @@
+```{r ENVIRONNEMENTAL DESCRIPTORS}
+library(raster)
+library(ncdf4)
+setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data/Environmental data/Benthic layers")
+# List all rasters from a dir and load them in a stack
+files_names = list.files("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data/Environmental data/Benthic layers",pattern = ".nc$")
+extent <- extent(-180, 180, -80, -50)
+raster_list = list()
+for (i in seq_along(files_names)) {
+  raster_list[[i]] = raster(files_names[i])
+  raster_list[[i]] <- crop(raster_list[[i]], extent)
+}
+predictors_stack = stack(raster_list)
+plot(subset(predictors_stack,6), col=bluepalette, cex=0.8, legend.width=0.5, legend.shrink=0.4,legend.args=list(text="Depth (m)", side=3, font=2, cex=0.8))
+depth = subset(predictors_stack,6)
+```
+
+```{r BASEMAP}
+library(SOmap)
+library(SDMPlay)
+basemap = SOmap(bathy_legend = F, ice = F, trim = -50, fronts = T, border_col = c("white","black"), border_width = 1) 
+plot(basemap)
+SOplot(depth, col = bluepalette)
+```
+
+```{r OCCURRENCE DATA}
+setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data/Species data/Preys/Automatic")
+library(readr)
+colnames(spat_occ) = c("longitude", "latitude")
+occ = read.csv("Coords_Myctophidae.csv", sep = ",")
+# Extract longitude and latitude values
+spat_occ = cbind.data.frame(occ$longitude,occ$latitude)
+colnames(spat_occ) = c("longitude", "latitude")
+head(spat_occ)
+```
+
+```{r GET LAND DATA AND FILTER POINTS}
+plot(basemap)
+SOplot(spat_occ)
+setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data")
+# Load land mask data
+land_mask <- raster("Antarctica_land.nc")
+# Create a logical vector indicating if each point is at sea
+on_land <- !is.na(extract(land_mask, spat_occ))
+# Subset the spatial point data to keep only points at sea
+spat_occ_land <- spat_occ[on_land, ]
+library(dplyr)
+# Remove points on land from spat_occ
+spat_occ_sea <- anti_join(spat_occ, spat_occ_land)
+spat_occ = spat_occ_sea
+# Plot the remaining points on the basemap
+plot(basemap)
+SOplot(spat_occ_sea)
+```
+
+```{r STUDY EXTENT}
+extent = extent(-180, 180, -80, -50)
+# Filter the data frame based on the extent
+spat_occ = spat_occ[spat_occ$longitude >= extent@xmin & spat_occ$longitude <= extent@xmax & spat_occ$latitude >= extent@ymin & spat_occ$latitude <= extent@ymax, ]
+plot(basemap)
+SOplot(depth, col = bluepalette)
+SOplot(spat_occ, col = "darkblue", pc = 20)
+```
+
+```{r ENVIRONNMENTAL COLLINEARITY ANALYSIS}
+library(usdm)
+collinear_var = vifstep(predictors_stack)
+raster_names = names(predictors_stack)
+for (var in collinear_var@excluded) {
+  raster_names = raster_names[!grepl(var, raster_names)]
+}
+#raster_names <- raster_names[!(raster_names %in% c("ice_thickness_min", "ice_cover_min","ice_cover_mean","ice_cover_range"))]
+# Keep only rasters that are not collinear
+stack_linear = predictors_stack[[raster_names]]
+envi_data <- stack_linear
+```

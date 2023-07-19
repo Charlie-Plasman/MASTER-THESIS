@@ -1,0 +1,23 @@
+```{r KERNEL DENSITY ESTIMATION}
+KDE_layer = raster(MASS::kde2d(spat_occ$longitude, spat_occ$latitude,
+                                n=c(ncol(stack_linear), nrow(stack_linear)),
+                                lims=c( -180, 180, -80, -50))) 
+extent(KDE_layer) = extent(stack_linear)
+KDE_layer = mask(KDE_layer, subset(stack_linear,1)) 
+plot(basemap)
+SOplot(KDE_layer, legend = T, col = my.palette.oranges) 
+HSMtable_KDE= SDMPlay:::SDMtab(xydata=spat_occ, predictors=stack_linear, unique.data=TRUE,same=TRUE, KDE=KDE_layer)
+HSMtable= SDMPlay:::SDMtab(xydata=spat_occ, predictors=stack_linear, unique.data=TRUE,same=TRUE)
+background_detail_KDE = subset(HSMtable_KDE, HSMtable_KDE$id==0)[,c(2,3)] 
+background_detail = subset(HSMtable, HSMtable$id==0)[,c(2,3)] 
+```
+
+```{r KDE PROCEDURE}
+# Plot the background points from the random and KDE procedure
+plot(basemap)
+SOplot(stack_linear$depth, col=bluepalette)
+SOplot(background_detail_KDE, pch=20, col= "darkblue")
+plot(basemap)
+SOplot(stack_linear$depth, col=bluepalette)
+SOplot(background_detail, pch=20, col= "darkblue")
+```
