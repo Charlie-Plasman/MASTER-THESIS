@@ -1,12 +1,3 @@
-HSM NOTEBOOK 1 - MODELISATION
-MEMOIRE - PLASMAN CHARLIE
-2023
-
-```{r COLOR PALETTE}
-library(RColorBrewer)
-palettemulticolor = colorRampPalette(c("deepskyblue", "darkseagreen","lightgreen", "green","yellow","gold","orange", "red","firebrick"))(100)
-```
-
 ```{r NULL MODELS}
 null_model1 = SDMPlay:::null.model(xy = data[,2:3],predictors = envi_data, type = 1, algorithm ="brt", nb = 1000, unique.data = T, same = T, nb.rep = 5, tc = 5,
 lr = 0.001, bf = 0.75)
@@ -15,25 +6,30 @@ null_model2 = SDMPlay:::null.model(xy = data[,2:3],predictors = envi_data, type 
 lr = 0.001, bf = 0.75)
 
 plot(basemap)
-SOplot(null_model1$pred.mean, col = my.palette.oranges)
+SOplot(null_model1$pred.mean, col = palettemulticolor)
 
 plot(basemap)
-SOplot(null_model2$pred.mean, col = my.palette.oranges)
+SOplot(null_model2$pred.mean, col = palettemulticolor)
 ```
 
 ```{r RANDOM CROSS-VALIDATION - LOOP}
 library(SDMPlay)
-setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data")
+setwd("/Users/charlieplasman/Desktop")
 
 # Choose the occurrence data (random/KDE)
-data <- HSMtable
+data <- HSMtable_KDE
 
-n_repeats <- 1  # Number of repetitions
+n_repeats <- 5 # Number of repetitions
 model_outputs <- vector("list", n_repeats)  # List to store the model outputs
 
 for (i in 1:n_repeats) {
+  # Choose the occurrence data (random/KDE)
+  HSMtable_KDE= SDMPlay:::SDMtab(xydata=spat_occ, predictors=stack_linear, 
+                                 unique.data=TRUE,same=TRUE, KDE=KDE_layer)
+  data = HSMtable_KDE
   model_output <- SDMPlay:::compute.brt(x = data, proj.predictors = envi_data,
-                              tc = 5, lr = 0.0005, bf = 0.75, n.trees = 500, step.size = 500)
+                              tc = 5, lr = 0.0005, bf = 0.75, n.trees = 500, 
+                              step.size = 500, n.folds = 5)
   model_outputs[[i]] <- model_output
 }
 
@@ -52,28 +48,36 @@ stack.pred <- stack(raster_predictions)
 average_pred <- calc(stack.pred, mean)
 
 plot(basemap)
-SOplot(average_pred, col = palettemulticolor)
+SOplot(average_pred, col = hcl.colors(80, "Viridis"))
 ```
 
-```{r SPATIAL CROSS-VALIDATION (CLOCK 6) - LOOP}
+```{r}
+crumb = model_outputs
+crumb2 = model_outputs
+crumb = model_outputs[1:5]
+model_outputs[6:10] = crumb2[1:5]
+plot(basemap)
+SOplot(average_pred, col = hcl.colors(80, "Viridis"))
+```
+
+```{r SPATIAL CROSS-VALIDATION (CLOCK 2) - LOOP}
 library(SDMPlay)
-setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data")
+setwd("~/Desktop/Mémoire /Personal data")
 
-# Choose the occurrence data (random/KDE)
-data <- HSMtable_KDE
-envi_data <- stack_linear
-
-n_repeats <- 5  # Number of repetitions
+n_repeats <- 10  # Number of repetitions
 model_outputs <- vector("list", n_repeats)  # List to store the model outputs
 
 for (i in 1:n_repeats) {
+  # Choose the occurrence data (random/KDE)
+  HSMtable_KDE= SDMPlay:::SDMtab(xydata=spat_occ, predictors=stack_linear, 
+                                 unique.data=TRUE,same=TRUE, KDE=KDE_layer)
+  data = HSMtable_KDE
   # Create replicates with different partitioning
   idP <- which(data$id == 1)
   partition_function <- SDMPlay:::clock2(data[idP, c("longitude", "latitude")], data[-idP, c("longitude", "latitude")])
   MyFold <- rep(NA, nrow(data))
   MyFold[idP] <- partition_function$occ.grp
   MyFold[-idP] <- partition_function$bg.coords.grp
-  
   {
     plot(basemap)
     SOplot(data[, c("longitude", "latitude")],
@@ -84,7 +88,7 @@ for (i in 1:n_repeats) {
   }
   
   model_output <- SDMPlay:::compute.brt(x = data, proj.predictors = envi_data,
-                              tc = 5, lr = 0.01, bf = 0.75, 
+                              tc = 2, lr = 0.001, bf = 0.75, 
                               n.trees = 500, step.size = 500,
                               n.folds = 2,
                               fold.vector = MyFold)
@@ -106,14 +110,25 @@ stack.pred <- stack(raster_predictions)
 average_pred <- calc(stack.pred, mean)
 
 plot(basemap)
-SOplot(average_pred, col = palettemulticolor)
+SOplot(average_pred, col = hcl.colors(80, "Viridis"))
+
+#SOleg(x = runif(100), position = "bottomleft", col = hcl.colors(80, "Viridis"),
+        #breaks = c(0.2, 0.4, 0.6, 0.8), trim = -45,
+        #rnd = 1, type = "continuous")
 ```
 
 ```{r SAVE}
-dir = "/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data"
-writeRaster(average_pred, filename=file.path(dir, "Myctophidae_NO_KDE_comparaison.nc"), format="CDF", overwrite=TRUE)
-setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data")
-prey = raster("Myctophidae_NO_KDE_comparaison.nc")
+library(ncdf4)
+library(raster)
+dir = "/Users/charlieplasman/Desktop"
+writeRaster(average_pred, filename = file.path(dir, "OMA_PRED.tif"), format="GTiff", overwrite = T)
+
+setwd("/Users/charlieplasman/Desktop")
+
+test = raster("CRAN_PRED.tif")
+test2 = raster( "CHANNI_PRED.tif")
 plot(basemap)
-SOplot(prey, col = palettemulticolor)
+SOplot(test, col = hcl.colors(80, "Viridis"))
+plot(basemap)
+SOplot(test2)
 ```

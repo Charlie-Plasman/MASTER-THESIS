@@ -1,4 +1,22 @@
+```{r LOAD MODELS}
+setwd("/Users/charlieplasman/Desktop/Mémoire/RESULTS/MYCTOPHIDAE/KDE")
+library(rlist)
+BRTs = list.load("MYCTO_BRTS_KDE_SP2.RData")
+prediction = raster("MYCTO_MEAN_KDE_SP2.nc")
+data = HSMtable_KDE
+```
 
+```{r SPATIAL AUTOCORRELATION}
+library(ape)
+xy <- data[, 2:3]
+dists <- as.matrix(dist(xy))
+dists.inv <- 1/dists
+diag(dists.inv) <- 0
+dists.inv[is.infinite(dists.inv)] <- max(dists[!is.infinite(dists)])
+#res <- c(BRTs[[1]]$eval.stats$residuals[[1]])
+res <- c(model4$residuals)
+Moran.I(res, dists.inv)
+```
 
 ```{r CORRELATION}
 library(ncf)
@@ -15,21 +33,10 @@ par(mfcol=c(1,1))
 }
 ```
 
-```{r SPATIAL AUTOCORRELATION}
-library(ape)
-xy <- data[, 2:3]
-dists <- as.matrix(dist(xy))
-dists.inv <- 1/dists
-diag(dists.inv) <- 0
-dists.inv[is.infinite(dists.inv)] <- max(dists[!is.infinite(dists)])
-res <- c(model_output$eval.stats$residuals[[1]])
-Moran.I(res, dists.inv)
-```
-
 ```{r MODEL STATISTICS}
 # Créer une liste pour stocker les moyennes et variabilités des statistiques d'évaluation
 mean_sd_stats <- list()
-evaluation_stats <- c("AUC", "TSS", "COR")
+evaluation_stats <- c("AUC", "TSS", "COR", "maxSSS", "ntrees")
 
 # Boucle for pour calculer la moyenne et la variabilité pour chaque statistique d'évaluation
 for (stat in evaluation_stats) {
@@ -38,9 +45,9 @@ for (stat in evaluation_stats) {
   # Liste pour stocker les valeurs individuelles de la statistique d'évaluation pour chaque modèle
   stat_values <- c()
   # Boucle à travers chaque modèle
-  for (i in 1:length(BRTs)) {
+  for (i in 1:length(model_outputs)) {
     # Récupérer la statistique d'évaluation pour le modèle i
-    eval_stat <- BRTs[[i]]$eval.stats[[stat]]
+    eval_stat <- model_outputs[[i]]$eval.stats[[stat]]
     
     # Ajouter la statistique à la liste des valeurs
     stat_values <- c(stat_values, eval_stat)
@@ -62,11 +69,41 @@ for (stat in evaluation_stats) {
   sd_val <- mean_sd_stats[[stat]]$sd
   message(paste(stat, "=", round(mean_val, 2), "±", round(sd_val, 2)))
 }
+
+# Create empty vectors to store the evaluation metrics and variability
+discrimination_mean <- numeric(length(model_outputs))
+mean_deviance <- numeric(length(model_outputs))
+sd_discrimination <- numeric(length(model_outputs))
+sd_mean_deviance <- numeric(length(model_outputs))
+
+# Loop through each BRT model
+for (i in seq_along(model_outputs)) {
+  # Extract the discrimination mean and mean deviance for the current model
+  discrimination_mean[i] <- model_outputs[[i]]$response$cv.statistics$discrimination.mean
+  mean_deviance[i] <- model_outputs[[i]]$response$cv.statistics$deviance.mean
+  
+  # Extract the standard deviation of discrimination mean and mean deviance for the current model
+  sd_discrimination[i] <- model_outputs[[i]]$response$cv.statistics$discrimination.se
+  sd_mean_deviance[i] <- model_outputs[[i]]$response$cv.statistics$deviance.se
+}
+
+# Calculate the mean discrimination accuracy and mean deviance
+mean_discrimination <- mean(discrimination_mean)
+mean_mean_deviance <- mean(mean_deviance)
+
+# Calculate the standard deviation of discrimination accuracy and mean deviance
+sd_discrimination <- mean(sd_discrimination)
+sd_mean_deviance <- mean(sd_mean_deviance)
+
+# Print the results
+cat("Mean Discrimination Accuracy:", round(mean_discrimination,4), "±", round(sd_discrimination,4), "\n")
+cat("Mean Mean Deviance:", round(mean_mean_deviance,2), "±", round(sd_mean_deviance,2), "\n")
 ```
 
 ```{r EXTRAPOLATION - MESS}
+presences = subset(HSMtable_KDE,HSMtable_KDE[,1] == 1)
 # Extract environmental values at presence-only records location
-envi_scores = raster::extract(envi_data, data[,2:3]) 
+envi_scores = raster::extract(envi_data, presences[,2:3]) 
 # Calculate MESS score
 x = dismo::mess(envi_data,envi_scores)
 y = x; values(y)= values(x)>0
@@ -84,7 +121,15 @@ legend("bottomleft", legend=c("extrapolation","OK"),
 # Calculate the proportion of the area where extrapolation occurs
 MESS= reclassify(MESS_layer,cbind(1,NA))
 # compare the number of pixels = 0 to the number of total pixels of the area
-length(which(!is.na(values(MESS))))*100 / length(which(!is.na(values(subset(predictors_stack,1)))))
+# Print the result
+cat("Percentage of extrapolation area:", round(length(which(!is.na(values(MESS))))*100 / length(which(!is.na(values(subset(predictors_stack,1))))),2), "%\n")
+
+# Create a raster that keeps only the extrapolation pixels
+extrapolation_raster <- !MESS_layer
+# Transformez les zéros en valeurs manquantes (NA) dans extrapolation_raster
+extrapolation_raster <- reclassify(extrapolation_raster, cbind(0, NA))
+plot(basemap)
+SOplot (extrapolation_raster, col = "grey", legend=F) 
 ```
 
 ```{r EXTRAPOLATION - MESS SPLIT}
@@ -109,27 +154,9 @@ MESS_amelio = mask(MESS_amelio, MESS) # keep only areas where extrapolation occu
 {
 plot(basemap)
 SOplot (MESS_amelio, col=palettemulticolor, legend=F) 
-points(worldmap, type="l")
 legend("bottomleft", legend=names(predictors_stack),
-       col=palettemulticolor, pch=20, bg = "white", cex=0.5)
+       col=palettemulticolorraw, pch=20, bg = "white", cex=0.75)
 }
-```
-
-```{r SUITABLE AREA}
-# Binarize model predictions
-maxSSS = model_output$eval.stats$maxSSS
-{
-plot(basemap)
-SOplot(model_output$raster.prediction, col=c("lightblue","red"), breaks=c(0, maxSSS ,1), main="Prediction for cluster 1",
-     cex.axis= 0.7,
-     legend.width=0.5, legend.shrink=0.25,
-     legend.args=list(text="Distribution probability", side=3, font=2, cex=0.7)) 
-}
-# Extract predictions at BRTs data location
-location_presence_BRTs = data[as.factor(MyFold)==1,c(2,3)] 
-extracted_values = raster::extract(model_output$raster.prediction,location_presence_BRTs) 
-# Compare the values with the maxSSS value and evaluate the percentage of correctly classified presence BRTs data
-100* length (which(na.omit(extracted_values) >= maxSSS)) / length(na.omit(extracted_values))
 ```
 
 ```{r EXTRAPOLATION - CONTRIBUTIONS}
@@ -141,3 +168,170 @@ for (k2 in 1:nlayers(envi_data)){
     length(which(!is.na(values(subset(envi_data,1))))) }
 table = data.frame(table_mess_amelio)
 ```
+
+```{r CONTRIBUTION AND INTERACTION DESCRIPTORS}
+library(dismo)
+# Calculate contribution of descriptors
+contributions_list <- list()
+for (i in seq_along(model_outputs)) {
+  contributions_list[[i]] <- data.frame(model_outputs[[i]]$response$contributions)
+}
+var_order <- c("kg_wind_speed", "bo_sst_range", "bo_sst_mean", "gb_depth", "kg_b_o2dissolve", "gc_poc_mean", "aq_ice_amn", "gb_slope", "bo_chla_mean", "aq_waveheight", "ecco2_uv_sur_current", "bo_o2dis", "bo_chla_range")
+for (i in seq_along(contributions_list)) {
+  contributions_list[[i]] <- contributions_list[[i]][match(contributions_list[[i]][, 1], var_order), ]
+}
+
+# Créer un dataframe pour stocker les moyennes
+mean_dataframe <- data.frame(Variable = character(0), Moyenne = numeric(0))
+
+# Parcourir chaque dataframe
+for (i in seq_along(contributions_list)) {
+  df <- contributions_list[[i]]
+  
+  # Parcourir chaque variable dans le dataframe
+  for (j in seq_along(df$var)) {
+    var_name <- df$var[j]
+    var_value <- df$rel.inf[j]
+    
+    # Si la variable existe déjà dans mean_dataframe, mettre à jour la moyenne
+    if (var_name %in% mean_dataframe$Variable) {
+      mean_dataframe$Moyenne[mean_dataframe$Variable == var_name] <- 
+        mean_dataframe$Moyenne[mean_dataframe$Variable == var_name] + var_value
+    } else {
+      # Sinon, ajouter la variable avec sa valeur dans mean_dataframe
+      mean_dataframe <- rbind(mean_dataframe, data.frame(Variable = var_name, Moyenne = var_value))
+    }
+  }
+}
+
+# Calculer les moyennes finales en divisant par le nombre de tableaux
+mean_dataframe$Moyenne <- mean_dataframe$Moyenne / length(contributions_list)
+
+# Afficher le dataframe des moyennes
+print(mean_dataframe)
+
+
+
+contributions = contributions_list[[1]]
+b <- barplot(contributions[, 2], ylab = "Contribution (%)", names.arg = contributions[,1])
+contributions
+#Calculate interactions between descriptors
+gbm.plot(model_outputs[[1]]$response,n.plots=13,cex.axis=0.6,cex.lab=0.7, smooth=TRUE)
+interactions = gbm.interactions(model_outputs[[1]]$response) 
+head(interactions$rank.list[,c(5,2,4)])
+gbm.perspec(model_outputs[[1]]$response,interactions$rank.list[1,1], interactions$rank.list[1,3], cex.lab=0.6, cex.axis=0.6)
+```
+
+```{r SUITABLE AREA}
+# Binarize model predictions
+maxSSS = mean_sd_stats$maxSSS$mean
+prediction = raster("OMA_PRED.tif")
+#{
+#plot(basemap)
+#SOplot(prediction, col=c("lightblue","red"), breaks=c(0, maxSSS ,1), main="ZONE HABITABLE",
+     #cex.axis= 0.7,
+     #legend.width=0.5, legend.shrink=0.25,
+     #legend.args=list(text="Probabilité de présence", side=3, font=2, cex=0.7)) 
+#}
+
+# Calculate the total area of the raster layer
+total_area <- cellStats(prediction, sum, na.rm = TRUE)
+
+# Create a raster layer with 1 where prediction > maxSSS, and NA elsewhere
+habitable_area <- reclassify(prediction, cbind(0, maxSSS, NA))
+
+# Calculate the number of pixels representing habitable area
+pixels_habitable = cellStats(habitable_area, sum, na.rm = T)
+
+# Calculate the percentage of habitable area compared to the total area
+percentage_habitable <- pixels_habitable * 100 / total_area
+
+# Print the result
+cat("Percentage of habitable area:", round(percentage_habitable, 2), "%\n")
+
+habitable_area <- reclassify(habitable_area, cbind(maxSSS, 1, 1))
+plot(basemap)
+SOplot(habitable_area, col = "darkgreen", legend = F)
+```
+
+
+```{r SUITABLE AREA - MPA}
+# Convertir les coordonnées des occurrences en un objet SpatialPointsDataFrame (replacez "occurrences" par le nom de votre dataframe)
+occurrences <- subset(HSMtable_KDE, HSMtable_KDE[, 1] == 1)
+occurrences = occurrences[,2:3] 
+occurrences_sp <- SpatialPointsDataFrame(coords = occurrences[, c("longitude", "latitude")], data = occurrences)
+
+# Créer un raster de points à partir des occurrences
+raster_occurrences <- rasterize(occurrences_sp, habitable_area)
+
+# Masquer la couche binaire avec le raster de points des occurrences
+habitable_area_masked <- mask(habitable_area, raster_occurrences)
+
+# Vérifier si la couche binaire reste inchangée (tous les pixels de valeur 1 restent inchangés)
+rule_of_parsimony <- all(values(habitable_area_masked) == 1)
+
+# Afficher le résultat
+if (rule_of_parsimony) {
+  cat("La règle de parcimonie est respectée.\n")
+} else {
+  cat("La règle de parcimonie n'est pas respectée.\n")
+}
+
+library(raster)
+
+# Set initial threshold value
+threshold <- 0.01
+
+# Initialize a flag to continue the loop
+continue_loop <- TRUE
+
+while (continue_loop) {
+  # Create a binary map of suitable habitat using the current threshold
+  habitable_area <- reclassify(prediction, cbind(threshold, 1, NA))
+  
+  # Check if all occurrences are encompassed by the current habitat map
+  if (all(is.na(extract(habitable_area, occurrences_sp)))) {
+    # If all occurrences are encompassed, stop the loop
+    continue_loop <- FALSE
+  } else {
+    # If not all occurrences are encompassed, increase the threshold value
+    threshold <- threshold + 0.01
+  }
+}
+
+# Print the final threshold value that meets the parsimony rule
+cat("Threshold value:", threshold, "\n")
+
+# Create the final binary map of suitable habitat using the final threshold
+habitable_area <- reclassify(prediction, cbind(threshold, 1, NA))
+
+##### Intéressant, dans le cas des mycto, pas possible de d'obtenir une MPA, en effet signifie avoir le seuil minimal qui conserve toutes les occurences, ici même avec seuil à 1%, on a pas tous les points dans la zone de prédiction. Probablement dû à la quantité de données et à la correction spatiale.
+```
+
+```{r - RELATIVE SUITABILITY}
+# Supposez que prediction est votre carte de prédiction du modèle
+
+# Get the raster values
+values_pred <- values(prediction)
+
+# Remove NA values
+values_pred <- na.omit(values_pred)
+
+# Calculate the cumulative sum
+cumulative_sum <- cumsum(values_pred)
+
+# Normalize the cumulative sum to the range of 0 to 100
+cumulative_normalized <- cumulative_sum / max(cumulative_sum) * 100
+
+# Create a new raster with the normalized cumulative values
+cumulative_raster <- raster(prediction)
+cumulative_raster[] <- NA  # Set all values to NA first
+cumulative_raster[] <- cumulative_normalized
+
+# Visualize the cumulative raster
+plot(basemap)
+SOplot(cumulative_raster, col = rev(terrain.colors(100)))
+plot(basemap)
+SOplot(prediction, col = rev(terrain.colors(100)))
+```
+

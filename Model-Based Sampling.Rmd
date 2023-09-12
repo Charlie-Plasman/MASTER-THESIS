@@ -1,0 +1,122 @@
+```{r Similarité environnementale}
+library(raster)
+
+# Calculer le résumé des valeurs environnementales et normaliser
+summary_raster <- scale(envi_data)
+summary_raster <- calc(summary_raster, mean)
+# Sélectionner les valeurs environnementales pour les occurrences d'intérêt
+envi_pres <- HSMtable_KDE[HSMtable_KDE$id == 1, 4:18]
+pres = HSMtable_KDE[HSMtable_KDE$id == 1, 2:3]
+mean_pres = cbind.data.frame(mean(pres$longitude),mean(pres$latitude))
+# Calculer la moyenne des variables environnementales et normaliser
+mean_envi <- apply(envi_pres, 2, mean, na.rm = TRUE)
+mean_envi <- (mean_envi - mean(mean_envi)) / sd(mean_envi)
+# Calculer la moyenne de toutes les valeurs normalisées
+mean_value <- mean(mean_envi)
+# Afficher la moyenne
+print(mean_value)
+# Extract the values of environmental variables at the occurrence point
+envi_at_occurrence <- mean_pres
+# Calculate the Euclidean distance for each pixel in the landscape
+similarity_matrix <- sqrt(rowSums((summary_raster - mean_pres)^2))
+
+###
+similarity_matrix <- distanceFromPoints(summary_raster, envi_at_occurrence)
+ # Calculate the Euclidean distances to the mean environmental point for each pixel
+similarity_matrix <- distanceFromPoints(envi_data_norm, mean_coords)
+# Convert the distances to similarity values (1 - distance)
+similarity_matrix <- 1 - similarity_matrix
+# Create a raster from the similarity matrix
+raster_similarity <- raster(similarity_matrix, xmn = extent(envi_data)[1], xmx = extent(envi_data)[2], ymn = extent(envi_data_norm)[3], ymx = extent(envi_data_norm)[4])
+###
+
+# Create a raster from the similarity matrix
+raster_similarity <- raster(summary_raster)
+raster_similarity[] <- similarity_matrix
+plot(raster_similarity)
+plot(basemap)
+SOplot(raster_similarity$layer, main = "Environmental Similarity", col = rev(terrain.colors(100)))
+# Save the raster as a new GIS raster coverage in ASCII format
+writeRaster(raster_similarity, "similarity_raster.tif", format = "GTiff")
+```
+
+```{r GRTS}
+# Load necessary libraries
+library(sp)
+library(rgdal)
+library(spsurvey)
+
+# Read your study area polygon shapefile
+study_area <- readOGR("path/to/shapefile", layer = "study_area")
+
+# Create a sample grid using GRTS method
+sample_grid <- grts(sample_size = 100, shape = study_area)
+
+# Plot the sample grid to visualize the design
+plot(study_area, main = "GRTS Sample Grid")
+plot(sample_grid, add = TRUE, pch = 16, col = "red")
+
+# Generate random points within each sample segment of the grid
+sample_points <- spsample(sample_grid, n = 1, type = "random")
+
+# Plot the random sample points
+plot(study_area, main = "GRTS Sample Points")
+plot(sample_points, add = TRUE, pch = 16, col = "red")
+```
+
+```{r MPA}
+To calculate the Minimal Predicted Area (MPA) as described in Engler et al. (2004), you can use the following code in R:
+
+# Assuming you have a raster object 'predicted_raster' containing the model predictions
+# and a raster object 'species_occurrences' containing the presence/absence of species occurrences
+
+# Set the probability threshold for determining suitable habitat
+probability_threshold <- 0.5
+
+# Convert the predicted raster to a binary raster based on the probability threshold
+binary_raster <- predicted_raster >= probability_threshold
+
+# Find the common extent of the binary raster and the species occurrence raster
+common_extent <- intersect(extent(binary_raster), extent(species_occurrences))
+
+# Clip both rasters to the common extent
+binary_raster_clip <- crop(binary_raster, common_extent)
+species_occurrences_clip <- crop(species_occurrences, common_extent)
+
+# Check if all species occurrences are encompassed by the binary raster
+if (all(species_occurrences_clip[] == 1)) {
+  # If all occurrences are encompassed, the binary raster is the MPA
+  MPA <- binary_raster_clip
+} else {
+  # If not all occurrences are encompassed, expand the binary raster until they are
+  MPA <- binary_raster_clip
+  while (!all(species_occurrences_clip[] == 1)) {
+    # Expand the binary raster by one cell in all directions
+    MPA <- focal(MPA, w = matrix(1, nrow = 3, ncol = 3), fun = function(x) any(x))
+    MPA <- MPA > 0
+    MPA <- mask(MPA, species_occurrences_clip)
+  }
+}
+
+# Plot the MPA map
+plot(MPA, main = "Minimal Predicted Area (MPA)")
+```
+
+```{r Relative suitability}
+# Load the required library
+library(raster)
+
+# Set the relative suitability threshold
+suitability_threshold <- 40
+
+# Calculate the grid cell values as a percentage of the cumulative output
+grid_cells_percentage <- cumulative_output / cellStats(cumulative_output, "sum") * 100
+
+# Create a binary raster indicating high priority areas
+high_priority_raster <- grid_cells_percentage >= suitability_threshold
+
+# Plot the high priority areas
+plot(high_priority_raster, main = "High Priority Areas", col = c("white", "blue"))
+
+```
+

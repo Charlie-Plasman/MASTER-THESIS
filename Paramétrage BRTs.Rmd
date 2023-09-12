@@ -1,13 +1,18 @@
 ```{r BRT PARAMETERS}
+data = HSMtable_KDE
 library(gbm)
-model1 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 2, learning.rate = 0.005,
-                          bag.fraction = 0.75, n.trees = 500, step.size = 500)
-model2 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 2, learning.rate = 0.001,
-                          bag.fraction = 0.75, n.trees = 500, step.size = 500)
-model3 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 2, learning.rate = 0.0005,
-                          bag.fraction = 0.75, n.trees = 500, step.size = 100)
-model4 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 2, learning.rate = 0.0001,
-                          bag.fraction = 0.75, n.trees = 500, step.size = 100)
+model1 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 2, 
+                         learning.rate = 0.001, bag.fraction = 0.75, n.trees = 500, 
+                         step.size = 500, family = "bernoulli", n.folds = 5)
+model2 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 3, 
+                         learning.rate = 0.0001, bag.fraction = 0.75, n.trees = 500, 
+                         step.size = 500, family = "bernoulli", n.folds = 5)
+model3 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 4,
+                         learning.rate = 0.0005, bag.fraction = 0.75, n.trees = 500, 
+                         step.size = 500, family = "bernoulli", n.folds = 5)
+model4 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 5, 
+                         learning.rate = 0.0005, bag.fraction = 0.75, n.trees = 500, 
+                         step.size = 500, family = "bernoulli", n.folds = 5)
 tree.list1 = seq(100, model1$gbm.call$best.trees, by = 100)
 tree.list2 = seq(100, model2$gbm.call$best.trees, by = 100)
 tree.list3 = seq(100, model3$gbm.call$best.trees, by = 100)
@@ -36,5 +41,62 @@ plot(tree.list1,graphe.deviance1,xlim = c(-100,10000), ylim=c(0,1.5),type="l", x
 lines(tree.list2,graphe.deviance2,col="blue") 
 lines(tree.list3,graphe.deviance3,col="red") 
 lines(tree.list4,graphe.deviance4,col="green",xlab = "Number of trees", ylab = "Predictive deviance")
-legend("bottomright",legend=c("tc5 lr0.005 bf=0.5","tc5 lr0.005 bf=0.75","tc5 lr0.005 bf=1"), col=c("black","blue","red"),pch=16,cex=1)
+legend("bottomright",legend=c("tc2 lr0.001 bf=0.75","tc3 lr0.0001 bf=0.75","tc4 lr0.0005 bf=0.75", "tc5 lr0.0005 bf=0.75"), col=c("black","blue","red","green"),pch=16,cex=1)
 ```
+
+```{r BRT PARAMETERS - SPATIAL}
+data = HSMtable_KDE
+idP <- which(data$id == 1)
+partition_function <- SDMPlay:::clock2(data[idP, c("longitude", "latitude")], data[-idP, c("longitude", "latitude")])
+MyFold <- rep(NA, nrow(data))
+MyFold[idP] <- partition_function$occ.grp
+MyFold[-idP] <- partition_function$bg.coords.grp
+  
+library(gbm)
+model1 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 2, 
+                         learning.rate = 0.001, bag.fraction = 0.75, n.trees = 500, 
+                         step.size = 500, family = "bernoulli", n.folds = 2,
+                         fold.vector = MyFold)
+model2 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 3, 
+                         learning.rate = 0.0001, bag.fraction = 0.75, n.trees = 500, 
+                         step.size = 500, family = "bernoulli", n.folds = 2,
+                         fold.vector = MyFold)
+model3 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 4,
+                         learning.rate = 0.0005, bag.fraction = 0.75, n.trees = 500, 
+                         step.size = 500, family = "bernoulli", n.folds = 2,
+                         fold.vector = MyFold)
+model4 = dismo::gbm.step(data = data, gbm.x = 4:ncol(data), gbm.y = 1, tree.complexity = 5, 
+                         learning.rate = 0.0005, bag.fraction = 0.75, n.trees = 500, 
+                         step.size = 500, family = "bernoulli", n.folds = 2, 
+                         fold.vector = MyFold)
+tree.list1 = seq(100, model1$gbm.call$best.trees, by = 100)
+tree.list2 = seq(100, model2$gbm.call$best.trees, by = 100)
+tree.list3 = seq(100, model3$gbm.call$best.trees, by = 100)
+tree.list4 = seq(100, model4$gbm.call$best.trees, by = 100)
+pred1 = predict.gbm(model1,data, n.trees = tree.list1, "response") 
+pred2 = predict.gbm(model2,data, n.trees = tree.list2, "response") 
+pred3 = predict.gbm(model3,data, n.trees = tree.list3, "response") 
+pred4 = predict.gbm(model4,data, n.trees = tree.list4, "response")
+# comparison of predictions with observed values : measure of predicted deviance
+library(dismo)
+graphe.deviance1 = rep(0,max(tree.list1)/100) 
+for (i in 1:length(graphe.deviance1)) {
+  graphe.deviance1 [i] = calc.deviance(data$id, pred1[,i],calc.mean=T) }
+graphe.deviance2 = rep(0,max(tree.list2)/100) 
+for (i in 1:length(graphe.deviance2)) {
+  graphe.deviance2 [i] = calc.deviance(data$id, pred2[,i],calc.mean=T) }
+graphe.deviance3 = rep(0,max(tree.list3)/100) 
+for (i in 1:length(graphe.deviance3)) {
+  graphe.deviance3 [i] = calc.deviance(data$id, pred3[,i],calc.mean=T) }
+graphe.deviance4 = rep(0,max(tree.list4)/100) 
+for (i in 1:length(graphe.deviance4)) {
+  graphe.deviance4 [i] = calc.deviance(data$id, pred4[,i],calc.mean=T) }
+par(mfrow = c(1, 1))
+plot(tree.list1,graphe.deviance1,xlim = c(-100,10000), ylim=c(0,1.5),type="l", xlab = "Number of trees",
+     ylab = "Predictive deviance", cex.lab = 1.5, col="black")
+lines(tree.list2,graphe.deviance2,col="blue") 
+lines(tree.list3,graphe.deviance3,col="red") 
+lines(tree.list4,graphe.deviance4,col="green",xlab = "Number of trees", ylab = "Predictive deviance")
+legend("bottomright",legend=c("tc2 lr0.001 bf=0.75","tc3 lr0.0001 bf=0.75","tc4 lr0.0005 bf=0.75", "tc5 lr0.0005 bf=0.75"), col=c("black","blue","red","green"),pch=16,cex=1)
+```
+

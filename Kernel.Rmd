@@ -1,23 +1,50 @@
 ```{r KERNEL DENSITY ESTIMATION}
 KDE_layer = raster(MASS::kde2d(spat_occ$longitude, spat_occ$latitude,
                                 n=c(ncol(stack_linear), nrow(stack_linear)),
-                                lims=c( -180, 180, -80, -50))) 
+                                lims=c( -180, 180, -90, -45))) 
 extent(KDE_layer) = extent(stack_linear)
 KDE_layer = mask(KDE_layer, subset(stack_linear,1)) 
 plot(basemap)
-SOplot(KDE_layer, legend = T, col = my.palette.oranges) 
+SOplot(KDE_layer, legend = T, col = palettemulticolor) 
 HSMtable_KDE= SDMPlay:::SDMtab(xydata=spat_occ, predictors=stack_linear, unique.data=TRUE,same=TRUE, KDE=KDE_layer)
-HSMtable= SDMPlay:::SDMtab(xydata=spat_occ, predictors=stack_linear, unique.data=TRUE,same=TRUE)
+#HSMtable= SDMPlay:::SDMtab(xydata=spat_occ, predictors=stack_linear, unique.data=TRUE,same=TRUE)
 background_detail_KDE = subset(HSMtable_KDE, HSMtable_KDE$id==0)[,c(2,3)] 
-background_detail = subset(HSMtable, HSMtable$id==0)[,c(2,3)] 
+#background_detail = subset(HSMtable, HSMtable$id==0)[,c(2,3)] 
 ```
 
 ```{r KDE PROCEDURE}
 # Plot the background points from the random and KDE procedure
 plot(basemap)
-SOplot(stack_linear$depth, col=bluepalette)
+SOplot(stack_linear$gb_depth, col=bluepalette)
 SOplot(background_detail_KDE, pch=20, col= "darkblue")
-plot(basemap)
-SOplot(stack_linear$depth, col=bluepalette)
-SOplot(background_detail, pch=20, col= "darkblue")
+#plot(basemap)
+#SOplot(stack_linear$depth, col=bluepalette)
+#SOplot(background_detail, pch=20, col= "darkblue")
 ```
+
+```{r - SAMPLING EFFORT}
+# Inversez les valeurs en soustrayant chaque valeur de la valeur maximale
+plot(basemap)
+SOplot(KDE_layer)
+
+KDE_scaled = KDE_layer*1000
+plot(basemap)
+SOplot(KDE_scaled)
+
+#KDE_scaled_save = KDE_scaled
+#threshold = quantile(KDE_scaled,probs = 0.9)
+#KDE_scaled[KDE_scaled < threshold] <- NA
+
+plot(basemap)
+SOplot(KDE_scaled, col = palettemulticolor, legend = T)
+test = -KDE_scaled
+
+plot(basemap)
+SOplot(test, col = palettemulticolor, legend = T)
+
+KDE_map <- reclassify(test, cbind(-6, -0.004, NA))
+
+plot(basemap)
+SOplot(KDE_map, col = palettemulticolor, legend = F)
+```
+

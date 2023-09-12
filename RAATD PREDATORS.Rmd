@@ -1,0 +1,430 @@
+```{r LOAD LIBRARIES}
+library(raster)
+library(ncdf4)
+library(SOmap)
+library(RColorBrewer)
+```
+
+```{r LOAD BASEMAP AND COLORS}
+basemap = SOmap(bathy_legend = F, ice = T, trim = -45, fronts = "Park", border = F) 
+my.palette.oranges = brewer.pal(n = 9, name = "Oranges") 
+my.palette.blues = brewer.pal(n = 9, name = "Blues") 
+```
+
+```{r LOAD PRED DATA}
+setwd("/Users/charlieplasman/Desktop/Mémoire /Personal data/RAATD projections")
+files_names = list.files("/Users/charlieplasman/Desktop/Mémoire /Personal data/RAATD projections",pattern = ".nc$")
+raster_list = list()
+for (i in seq_along(files_names)) {
+  raster_list[[i]] = raster(files_names[i])
+}
+#plot(raster_list[[1]])
+```
+
+```{r THRESHOLDING}
+seuil <- 50
+extent <- extent(-180, 180, -90, -45)
+raster_thresholded_list <- list()
+raster_pred_list = list()
+
+for (i in seq_along(raster_list)) {
+  raster_thresholded <- raster_list[[i]]
+  raster_thresholded[raster_thresholded < seuil] <- NA
+  raster_thresholded <- crop(raster_thresholded, extent)
+  raster_thresholded <- raster_thresholded/100
+  raster_thresholded_list[[i]] <- raster_thresholded
+}
+
+raster_thresholded_stack = stack(raster_thresholded_list)
+plot(raster_thresholded_stack$ADPE)
+```
+
+```{r PLOTTING}
+par(mfrow = c(1, 1))
+for (i in seq_along(raster_thresholded_list)) {
+  plot(basemap)
+  SOplot(raster_thresholded_list[[i]], col = my.palette.oranges[4:9], legend = F)
+  SOleg(raster_thresholded_list[[i]], position = "topright", col = my.palette.oranges[4:9], ticks = 5, rnd = 0,
+      type = "continuous", label = files_names[i])
+}
+plot(raster_thresholded_list[[1]])
+```
+
+```{r OVERLAPPING}
+raster = raster_thresholded_list[[13]]
+# Define the desired resolution
+new_resolution <- 0.1  # Replace with the desired resolution in the units of your raster
+# Calculate the aggregation factor
+aggregation_factor <- ceiling(res(raster) / new_resolution)
+# Aggregate the raster to the new resolution
+raster_resampled <- aggregate(raster, fact = aggregation_factor, fun = mean)
+# Plot the modified raster
+plot(raster_resampled)
+raster = raster_resampled 
+
+setwd("~/Desktop/Mémoire /RESULTS/MYCTOPHIDAE/KDE")
+prey = raster("MYCTO_MEAN_KDE_SP2.nc")
+thresh = 0.5
+prey[prey < thresh] <- NA
+{
+plot(basemap)
+SOplot(raster,col = my.palette.blues, legend = F)
+SOplot(prey,col = my.palette.oranges, legend = F)
+}
+
+overlap <- raster & prey
+# Calculate the percentage of overlap
+percentage_overlap <- (sum(overlap[], na.rm = TRUE) / sum(raster[], na.rm = TRUE)) * 100
+# Print the percentage of overlap
+print(percentage_overlap)
+# Plot the overlap region
+plot(basemap)
+SOplot(overlap, col = "red", main = "Overlap Region", legend = F)
+
+```
+
+```{r DISTRIBUTION BY WEIGHT - SETUP}
+setwd("/Users/charlieplasman/Desktop")
+# Exemple de tableau "table_regime_alimentaire"
+predator_species <- c("Pygoscelis adeliae", "Aptenodytes forsteri", "Aptenodytes patagonicus", 
+                      "Eudyptes chrysolophus", "Eudyptes schlegeli", "Thalassoica antarctica", 
+                      "Procellaria aequinoctialis", "Diomedea exulans", "Thalassarche melanophris",
+                      "Thalassarche chrysostoma", "Phoebetria fusca", "Phoebetria palpebrata",
+                      "Arctocephalus gazella",  "Mirounga leonina", "Leptonychotes weddellii")
+prey_family <- c("Channichthyidae","Cranchiidae","Euphausiidae","Myctophidae", "Nototheniidae","Ommastrephidae", "Onychoteuthidae")
+diet_contributions <- predator_family_percentages
+#save(diet_contributions, file = "diet_contributions.RData")
+
+library(dplyr)
+
+files_names = list.files("/Users/charlieplasman/Desktop",pattern = "tif$")
+raster_list = list()
+for (i in seq_along(files_names)) {
+  raster_list[[i]] = raster(files_names[i])
+}
+plot(raster_list[[1]])
+# Renommer les rasters de proies dans l'objet liste raster_list
+for(i in seq_along(prey_family)){
+  names(raster_list[[i]]) <- prey_family[i]
+}
+
+save(raster_list, file = "PREYS_RASTERS.RData", overwrite = T)
+load("PREYS_RASTERS.RData")
+tmp = stack(raster_list)
+MEAN_DISTRIB_PREYS = mean(tmp)
+plot(basemap)
+SOplot(MEAN_DISTRIB_PREYS, col = hcl.colors(80, "Viridis"))
+dir = "/Users/charlieplasman/Desktop"
+writeRaster(MEAN_DISTRIB_PREYS, filename = file.path(dir, "MEAN_DISTRIB_PREYS.tif"), format="GTiff", overwrite = T)
+```
+```{r}
+cinq = raster("MEAN_DISTRIB_PREYS_5.tif")
+sept = raster("MEAN_DISTRIB_PREYS_7.tif")
+
+plot(basemap)
+SOplot(cinq, col = hcl.colors(80, "Viridis"))
+plot(basemap)
+SOplot(sept, col = hcl.colors(80, "Viridis"))
+```
+
+```{r DISTRIBUTION BY WEIGHT - 7 families}
+load("diet_contributions.RData")
+# Charger les rasters de proies dans un objet stack
+raster_prey <- stack(raster_list)
+
+# Créer une liste pour stocker les couches pondérées pour chaque prédateur
+weighted_layers_predators <- list()
+
+# Boucle sur les prédateurs
+for (predator in predator_species) {
+  # Filtrer le tableau des contributions alimentaires pour le prédateur donné
+  diet_contributions_predator <- diet_contributions %>%
+    filter(predator_name == predator)
+  # Boucle sur les familles de proies pour le prédateur donné
+  for (family in diet_contributions_predator$prey_worms_family) {
+    # Récupérer le pourcentage de contribution alimentaire pour cette famille de proie
+    weight <- diet_contributions_predator %>%
+      filter(prey_worms_family == family) %>%
+      select(percentage) %>%
+      unique()
+    # Accéder au raster de la famille de proies correspondant dans l'objet raster_prey
+    raster_family <- raster_prey[[family]]
+    # Pondérer le raster en fonction du pourcentage de contribution alimentaire
+    weighted_raster <- raster_family * (as.numeric(weight$percentage) / 100)    
+    # Ajouter la couche pondérée à la liste pour le prédateur donné
+    if (is.null(weighted_layers_predators[[predator]])) {
+      weighted_layers_predators[[predator]] <- weighted_raster
+    } else {
+      weighted_layers_predators[[predator]] <- weighted_layers_predators[[predator]] + weighted_raster
+    }
+  }
+}
+
+# Combiner les couches pondérées pour chaque prédateur en une pile
+weighted_preys_by_pred <- stack(weighted_layers_predators)
+
+# Somme des couches pondérées pour chaque prédateur pour obtenir la distribution spatiale totale du prédateur ajustée par la contribution alimentaire des familles de proies
+sum_weighted_preys_by_pred <- sum(weighted_preys_by_pred)
+writeRaster(sum_weighted_preys_by_pred, filename = file.path(dir, "SUM_PREYS_WEIGHTED_DISTRIB_7.tif"), format="GTiff", overwrite = T)
+plot(basemap)
+SOplot(MEAN_DISTRIB_PREYS, col = hcl.colors(80, "Viridis"))
+plot(basemap)
+SOplot(sum_weighted_preys_by_pred, col = hcl.colors(80, "Viridis"))
+### exactement même distrib mais pas même échelle
+
+
+###
+# Create an empty list to store the results
+percentage_lists <- list()
+
+# Boucle sur les prédateurs
+for (predator in predator_species) {
+  # Filtrer le tableau des contributions alimentaires pour le prédateur donné
+  diet_contributions_predator <- diet_contributions %>%
+    filter(predator_name == predator)
+    
+  # Calculer la somme des comptes pour le prédateur donné
+  sum_counts <- sum(diet_contributions_predator$count)
+  
+  # Calculer les pourcentages relatifs par famille
+  diet_contributions_predator$new_percentage <- (diet_contributions_predator$count / sum_counts) * 100
+  
+  # Ajouter l'objet diet_contributions_predator à la liste
+  percentage_lists[[predator]] <- diet_contributions_predator
+}
+```
+
+```{r DISTRIBUTION BY WEIGHT - 5 families}
+# Charger les rasters de proies dans un objet stack
+raster_prey <- stack(raster_list)
+
+# Créer une liste pour stocker les couches pondérées pour chaque prédateur
+weighted_layers_predators <- list()
+
+# Boucle sur les prédateurs
+for (predator in predator_species) {
+  # Filtrer le tableau des contributions alimentaires pour le prédateur donné
+  diet_contributions_predator <- diet_contributions %>%
+    filter(predator_name == predator)
+    ##### ici, je dois calculer un pourcentage relatif par famille 
+    # -> ex : count pour famille "cranchiidae"/somme col "count"
+    sum = sum(diet_contributions_predator$count)
+    diet_contributions_predator$new_percentage = (diet_contributions_predator$count/sum)*100
+  # Boucle sur les familles de proies pour le prédateur donné
+  for (family in diet_contributions_predator$prey_worms_family) {
+    # Récupérer le pourcentage de contribution alimentaire pour cette famille de proie
+    weight <- diet_contributions_predator %>%
+      filter(prey_worms_family == family) %>%
+      select(new_percentage) %>%
+      unique()
+    # Accéder au raster de la famille de proies correspondant dans l'objet raster_prey
+    raster_family <- raster_prey[[family]]
+    # Pondérer le raster en fonction du pourcentage de contribution alimentaire
+    weighted_raster <- raster_family * (as.numeric(weight$new_percentage) / 100)    
+    # Ajouter la couche pondérée à la liste pour le prédateur donné
+    if (is.null(weighted_layers_predators[[predator]])) {
+      weighted_layers_predators[[predator]] <- weighted_raster
+    } else {
+      weighted_layers_predators[[predator]] <- weighted_layers_predators[[predator]] + weighted_raster
+    }
+  }
+}
+
+# Combiner les couches pondérées pour chaque prédateur en une pile
+weighted_preys_by_pred <- stack(weighted_layers_predators)
+
+# Somme des couches pondérées pour chaque prédateur pour obtenir la distribution spatiale totale du prédateur ajustée par la contribution alimentaire des familles de proies
+sum_weighted_preys_by_pred <- sum(weighted_preys_by_pred)
+writeRaster(sum_weighted_preys_by_pred, filename = file.path(dir, "SUM_PREYS_WEIGHTED_DISTRIB.tif"), format="GTiff", overwrite = T)
+plot(basemap)
+SOplot(MEAN_DISTRIB_PREYS, col = hcl.colors(80, "Viridis"))
+plot(basemap)
+SOplot(sum_weighted_preys_by_pred, col = hcl.colors(80, "Viridis"))
+### exactement même distrib mais pas même échelle
+
+
+###
+# Create an empty list to store the results
+percentage_lists <- list()
+
+# Boucle sur les prédateurs
+for (predator in predator_species) {
+  # Filtrer le tableau des contributions alimentaires pour le prédateur donné
+  diet_contributions_predator <- diet_contributions %>%
+    filter(predator_name == predator)
+    
+  # Calculer la somme des comptes pour le prédateur donné
+  sum_counts <- sum(diet_contributions_predator$count)
+  
+  # Calculer les pourcentages relatifs par famille
+  diet_contributions_predator$new_percentage <- (diet_contributions_predator$count / sum_counts) * 100
+  
+  # Ajouter l'objet diet_contributions_predator à la liste
+  percentage_lists[[predator]] <- diet_contributions_predator
+}
+```
+
+```{r DISTRIBUTION BY WEIGHT - VISUALIZATION}
+###
+load("PREYS_RASTERS.RData")
+weighted_layers_predators = raster_list
+thresh = 0.5
+setwd("/Users/charlieplasman/Desktop/LAST RESULTS")
+weighted_thresholded_preys_by_pred = list()
+for (i in 1:length(weighted_layers_predators)) {
+  raster_thresholded <- weighted_layers_predators[[i]]
+  raster_thresholded[raster_thresholded < thresh] <- NA
+  weighted_thresholded_preys_by_pred[[i]] <- raster_thresholded
+}
+test = stack(weighted_thresholded_preys_by_pred)
+
+### compare predators distribution and weighted preys distribution
+plot(basemap)
+SOplot(weighted_preys_by_pred$Pygoscelis.adeliae, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$ADPE, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Aptenodytes.forsteri, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$EMPE, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Aptenodytes.patagonicus, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$KIPE, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Eudyptes.chrysolophus, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$MAPE.ROPE, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Eudyptes.schlegeli, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$MAPE.ROPE, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Thalassoica.antarctica, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$ANPE, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Procellaria.aequinoctialis, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$WHCP, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Diomedea.exulans, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$WAAL, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Thalassarche.melanophris, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$BBAL, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Thalassarche.chrysostoma, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$GHAL, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Phoebetria.fusca, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$DMSA, col = hcl.colors(80, "Inferno"), legend = F)
+#
+plot(basemap)
+SOplot(weighted_preys_by_pred$Phoebetria.palpebrata, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$LMSA, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Arctocephalus.gazella, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$ANFS, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Mirounga.leonina, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$SOES, col = hcl.colors(80, "Inferno"), legend = F)
+
+plot(basemap)
+SOplot(weighted_preys_by_pred$Leptonychotes.weddellii, col = hcl.colors(80, "Viridis"), legend = F)
+SOplot(raster_thresholded_stack$WESE, col = hcl.colors(80, "Inferno"), legend = F)
+
+```
+
+```{r DISTRIBUTION BY WEIGHT - VISUALIZATION}
+plot(basemap)
+SOplot(MEAN_DISTRIB_PREYS, col = hcl.colors(80, "Viridis"))
+SOplot(raster_thresholded_stack$MEAN, col = hcl.colors(80, "Inferno"), legend = F)
+
+test = MEAN_DISTRIB_PREYS
+test <- resample(test, raster_thresholded_stack$MEAN, method = "bilinear")
+joint_distribution <- test + raster_thresholded_stack$MEAN
+plot(basemap)
+SOplot(joint_distribution, col = hcl.colors(80, "Heat"))
+
+overlap <- test & raster_thresholded_stack$MEAN
+# Calculate the percentage of overlap
+percentage_overlap <- (sum(test[], na.rm = TRUE) / sum(raster_thresholded_stack$MEAN[], na.rm = TRUE)) * 100
+# Print the percentage of overlap
+print(percentage_overlap)
+# Plot the overlap region
+plot(basemap)
+SOplot(overlap, col = "darkred", main = "Overlap Region", legend = F)
+
+dir = "/Users/charlieplasman/Desktop"
+writeRaster(joint_distribution, filename = file.path(dir, "JOINT_DISTRIB_PREYS_PREDS_7.tif"), format="GTiff", overwrite = T)
+```
+
+```{r DISTRIBUTION BY WEIGHT - VISUALIZATION}
+# Calculer le seuil pour conserver les 50 pour-cent de valeurs les plus élevées
+quant <- quantile(distribution_full, probs = 0.5)
+# Remplacer les valeurs inférieures au seuil par des valeurs NA
+raster_subsis <- distribution_full
+raster_subsis[raster_subsis < quant] <- NA
+plot(basemap)
+SOplot(raster_subsis, col = my.palette.oranges[3:9])
+```
+
+```{r}
+library(sp)
+library(raster)
+library(SOmap)
+library(sf)
+
+# Charger le raster du basemap
+basemap <- SOmap(bathy_legend = F, ice = T, trim = -45, fronts = "Park", border = F)
+plot(basemap)
+SOmanagement(ccamlr = T, ccamlr_labels = T)
+
+# Charger les limites des SSMU
+ccamlr <- SOmanagement(ccamlr = T)
+# Convertir les limites des SSMU en objet sf
+ccamlr_sf <- st_sf(ccamlr$ccamlr_statistical_areas$main$plotargs$x)
+# Define the projection using the PROJ4 string
+projection_string <- "+proj=stere +lat_0=-90 +lat_ts=-71 +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
+# Create a new CRS object
+proj <- st_crs(projection_string)
+
+
+# Load your original raster
+original_raster <- envi_data$gb_depth
+#Create an empty list to store the cropped rasters
+cropped_rasters <- list()
+# Create a list of indices of regions you want to extract
+regions_to_extract <- c(1, 2, 4, 5, 6)
+# Crop the original raster for each region
+for (i in regions_to_extract) {
+  region_polygon <- ccamlr_sf[[1]][[i]]
+  # Convert sfg to sf object
+  extracted_values <- raster::extract(original_raster, region_polygon)
+
+  
+  
+  # Crop the original raster using the region polygon
+  cropped_raster <- crop(original_raster, region_sf)
+  
+  # Store the cropped raster in the list
+  cropped_rasters[[i]] <- cropped_raster
+}
+
+plot(raster(ccamlr_sf[[1]][[1]]))
+plot(ccamlr_sf[[1]][[2]])
+plot(ccamlr_sf[[1]][[4]])
+plot(ccamlr_sf[[1]][[5]])
+plot(ccamlr_sf[[1]][[6]])
+```
+
+
+
+
+

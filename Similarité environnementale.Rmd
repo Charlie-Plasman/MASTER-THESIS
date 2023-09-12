@@ -1,0 +1,28 @@
+```{r}
+library(raster)
+
+# Normalisation des variables environnementales
+envi_norm <- scale(envi_data)
+
+# Agréger les rasters en groupes de 2x2 (vous pouvez ajuster la taille selon votre résolution initiale)
+envi_norm_agg <- aggregate(envi_norm, fact = 2)
+
+# Initialisation d'une matrice pour stocker les distances de similarité pour chaque pixel et chaque point de référence
+similarity_matrix <- matrix(NA, nrow = nrow(envi_norm), ncol = nrow(spat_occ))
+
+# Calcul de la distance euclidienne pour chaque pixel par rapport à chaque point de référence
+for (i in 1:nrow(spat_occ)) {
+  similarity_matrix[, i] <- sqrt(rowSums((envi_norm_agg - spat_occ[i,])^2))
+}
+
+# Agrégation des mesures de similarité en prenant la moyenne pour chaque pixel
+average_similarity <- apply(similarity_matrix, 1, mean, na.rm = TRUE)
+
+# Création d'un raster de similarité environnementale avec la même étendue et résolution que envi_norm_agg
+raster_similarity <- raster(envi_norm_agg)
+values(raster_similarity) <- average_similarity
+
+# Affichage de la carte de similarité environnementale
+plot(raster_similarity, main = "Carte de similarité environnementale")
+```
+

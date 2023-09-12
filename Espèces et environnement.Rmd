@@ -1,65 +1,53 @@
-```{r ENVIRONNEMENTAL DESCRIPTORS}
+```{r COLOR PALETTE}
+library(RColorBrewer)
+palettemulticolor = colorRampPalette(c("deepskyblue", "darkseagreen","lightgreen", "green","yellow","gold","orange", "red","firebrick"))(100)
+palettemulticolorraw = colorRampPalette(c("deepskyblue", "darkseagreen","lightgreen", "green","yellow","gold","orange", "red","firebrick"))(36)
+bluepalette <- rev(colorRampPalette(c("#80BFFF", "#4D9EFF", "#1A80FF", "#0073E6", "#005CB3", "#004680", "#00324D"))(100))
+```
+
+```{r BASEMAP}
+library(SOmap)
+#basemap = SOmap(bathy_legend = F, ice = F, trim = -45, fronts = T, border_col = c("white","black"), border_width = 1,) 
+basemap = SOmap(bathy_legend = F, ice = T, trim = -45, fronts = "Park", border = F) 
+#basemap2 = SOmap(bathy_legend = "space", ice = T, trim = -45, fronts = "Park", border = F) 
+#plot(basemap2)
+```
+
+```{r ENVIRONNEMENTAL DESCRIPTORS - GUILLAUMOT}
 library(raster)
 library(ncdf4)
-setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data/Environmental data/Benthic layers")
+setwd("/Users/charlieplasman/Desktop/Mémoire /Personal data/Environmental data/Benthic layers low")
 # List all rasters from a dir and load them in a stack
-files_names = list.files("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data/Environmental data/Benthic layers",pattern = ".nc$")
-extent <- extent(-180, 180, -80, -50)
+files_names = list.files("/Users/charlieplasman/Desktop/Mémoire /Personal data/Environmental data/Benthic layers low", pattern = ".nc$")
+extent <- extent(-180, 180, -90, -45)
 raster_list = list()
 for (i in seq_along(files_names)) {
   raster_list[[i]] = raster(files_names[i])
   raster_list[[i]] <- crop(raster_list[[i]], extent)
 }
 predictors_stack = stack(raster_list)
-plot(subset(predictors_stack,6), col=bluepalette, cex=0.8, legend.width=0.5, legend.shrink=0.4,legend.args=list(text="Depth (m)", side=3, font=2, cex=0.8))
-depth = subset(predictors_stack,6)
+plot(predictors_stack$depth, col=bluepalette, cex=0.8, legend.width=0.5, legend.shrink=0.4,legend.args=list(text="Depth (m)", side=3, font=2, cex=0.8))
+depth = (predictors_stack$depth)
 ```
 
-```{r BASEMAP}
-library(SOmap)
-library(SDMPlay)
-basemap = SOmap(bathy_legend = F, ice = F, trim = -50, fronts = T, border_col = c("white","black"), border_width = 1) 
-plot(basemap)
-SOplot(depth, col = bluepalette)
-```
+```{r ENVIRONNEMENTAL DESCRIPTORS - BASHER}
+library(raster)
+setwd("~/Desktop/GMED_Full719/PRESENT_LOW")# List all rasters from a dir and load them in a stack
+files_names = list.files("~/Desktop/GMED_Full719/PRESENT_LOW", pattern = ".asc$")
+extent <- extent(-180, 180, -90, -45)
+raster_list = list()
+for (i in seq_along(files_names)) {
+  raster_list[[i]] = raster(files_names[i])
+  raster_list[[i]] <- crop(raster_list[[i]], extent)
+}
 
-```{r OCCURRENCE DATA}
-setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data/Species data/Preys/Automatic")
-library(readr)
-colnames(spat_occ) = c("longitude", "latitude")
-occ = read.csv("Coords_Myctophidae.csv", sep = ",")
-# Extract longitude and latitude values
-spat_occ = cbind.data.frame(occ$longitude,occ$latitude)
-colnames(spat_occ) = c("longitude", "latitude")
-head(spat_occ)
-```
+extent(raster_list[[11]]) <- extent(raster_list[[13]])
 
-```{r GET LAND DATA AND FILTER POINTS}
-plot(basemap)
-SOplot(spat_occ)
-setwd("/Users/charlieplasman/Desktop/Mémoire /HSM/Personal data")
-# Load land mask data
-land_mask <- raster("Antarctica_land.nc")
-# Create a logical vector indicating if each point is at sea
-on_land <- !is.na(extract(land_mask, spat_occ))
-# Subset the spatial point data to keep only points at sea
-spat_occ_land <- spat_occ[on_land, ]
-library(dplyr)
-# Remove points on land from spat_occ
-spat_occ_sea <- anti_join(spat_occ, spat_occ_land)
-spat_occ = spat_occ_sea
-# Plot the remaining points on the basemap
-plot(basemap)
-SOplot(spat_occ_sea)
-```
+# Now create the stack
+predictors_stack <- stack(raster_list)
 
-```{r STUDY EXTENT}
-extent = extent(-180, 180, -80, -50)
-# Filter the data frame based on the extent
-spat_occ = spat_occ[spat_occ$longitude >= extent@xmin & spat_occ$longitude <= extent@xmax & spat_occ$latitude >= extent@ymin & spat_occ$latitude <= extent@ymax, ]
-plot(basemap)
-SOplot(depth, col = bluepalette)
-SOplot(spat_occ, col = "darkblue", pc = 20)
+#plot(basemap)
+#SOplot(predictors_stack$bo_o2dis, col=palettemulticolor, cex=0.8, legend.width=0.5, legend.shrink=0.4,legend.args=list(text="Variable (x)", side=3, font=2, cex=0.8))
 ```
 
 ```{r ENVIRONNMENTAL COLLINEARITY ANALYSIS}
@@ -74,3 +62,109 @@ for (var in collinear_var@excluded) {
 stack_linear = predictors_stack[[raster_names]]
 envi_data <- stack_linear
 ```
+
+```{r OCCURRENCE DATA}
+setwd("/Users/charlieplasman/Desktop/Mémoire /Personal data/Species data/Preys/Automatic")
+library(readr)
+occ = read.csv("Coords_Myctophidae.csv", sep = ",")
+# Extract longitude and latitude values
+spat_occ = cbind.data.frame(occ$longitude,occ$latitude)
+colnames(spat_occ) = c("longitude", "latitude")
+head(spat_occ)
+test = SpatialPoints(spat_occ)
+plot(envi_data$gb_depth, col = hcl.colors(80, "Blues"))
+plot(test, col = "darkblue", cex = 0.5, pch =20, add = T)
+```
+
+```{r GET LAND DATA AND FILTER POINTS}
+plot(basemap)
+SOplot(spat_occ)
+# Load land mask data
+setwd("~/Desktop/Mémoire /Personal data/Environmental data")
+land_mask <- raster("Antarctica_land.nc")
+# Create a logical vector indicating if each point is at sea
+library(raadtools)
+on_land <- !is.na(extract(land_mask, spat_occ))
+# Subset the spatial point data to keep only points at sea
+spat_occ_land <- spat_occ[on_land, ]
+library(dplyr)
+# Remove points on land from spat_occ
+spat_occ_sea <- anti_join(spat_occ, spat_occ_land)
+spat_occ = spat_occ_sea
+# Plot the remaining points on the basemap
+plot(basemap)
+SOplot(spat_occ_sea)
+```
+
+```{r STUDY EXTENT}
+extent = extent(-180, 180, -80, -45)
+# Filter the data frame based on the extent
+spat_occ = spat_occ[spat_occ$longitude >= extent@xmin & spat_occ$longitude <= extent@xmax & spat_occ$latitude >= extent@ymin & spat_occ$latitude <= extent@ymax, ]
+plot(basemap)
+SOplot(spat_occ, col = "darkblue", pc = 20)
+```
+
+```{r STUDY EXTENT - SPLIT}
+# Nombre total de lignes dans le dataframe
+total_rows <- nrow(spat_occ)
+# Nombre de lignes que vous souhaitez conserver (la moitié)
+half_rows <- total_rows / 5
+# Générer un échantillon aléatoire d'indices de lignes
+selected_rows <- sample(1:total_rows, size = half_rows)
+# Sélectionner les lignes correspondantes dans le dataframe
+df_selected <- spat_occ[selected_rows, ]
+spat_occ = df_selected
+plot(basemap)
+SOplot(spat_occ)
+```
+
+```{r - SIMILARITE ECOLOGIQUE}
+presences = subset(HSMtable_KDE,HSMtable_KDE[,1] == 1)
+envi_df = na.omit(presences[,4:16])
+# Appliquer la classification K-means avec n clusters 
+num_clusters <- 5
+kmeans_clusters <- kmeans(envi_df, centers = num_clusters)
+test = envi_data
+# Ajouter l'information de cluster comme une nouvelle couche dans le raster stack
+test$cluster <- factor(kmeans_clusters$cluster)
+# Chargement du package RColorBrewer
+library(RColorBrewer)
+# Définir les couleurs pour les clusters
+colors <- brewer.pal(num_clusters, "Set2")
+# Créer une palette de couleurs pour les clusters
+cluster_pal <- colorRampPalette(colors)
+
+# Afficher la carte des zones écologiques
+
+cluster_pal(num_clusters)
+
+plot(basemap)
+SOplot(test$kg_wind_speed, col = hcl.colors(5, "Viridis"), legend = TRUE, main = "Carte des Zones Ecologiques")
+SOplot(presences[,2:3], pch = 20, col = "darkblue")
+```
+
+```{r}
+library(raster)
+# Calculer la moyenne des valeurs envi pour les présences disponibles
+mean_envi <- mean(envi_df$gb_depth)
+# Définir une fonction pour calculer la similarité écologique pour chaque pixel
+calc_ecological_similarity <- function(x) {
+  return(1 - sqrt((x - mean_envi)^2))
+}
+# Calculer la similarité écologique pour chaque pixel du raster envi_data$depth
+ecological_similarity <- calc(envi_data$gb_depth, calc_ecological_similarity)
+# Afficher la carte de similarité écologique
+plot(basemap)
+SOplot(ecological_similarity, col = palettemulticolor, legend = TRUE)
+```
+
+```{r - CUT MAP}
+test = ecological_similarity
+clean = reclassify(test, c(-5000,-400, NA))
+clean = reclassify(clean, c(-500, 1, 1))
+plot(basemap)
+SOplot(clean, legend = F)
+dir = "/Users/charlieplasman/Desktop"
+writeRaster(clean, filename = file.path(dir, "MBS_ECOSIMI_THRESH_EUPHAU_DEPTH.tif"), format="GTiff", overwrite = T)
+```
+

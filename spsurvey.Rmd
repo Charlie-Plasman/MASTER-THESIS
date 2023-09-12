@@ -1,0 +1,202 @@
+```{r - GENERATE STRATA}
+library(raster)
+setwd("/Users/charlieplasman/Desktop/LAST RESULTS")
+distrib = raster("JOINT_DISTRIB_PREYS_PREDS_7.tif")
+thresh = 0.5
+distrib[distrib < thresh] <- NA
+#distrib[distrib > thresh] <- 1
+plot(distrib)
+
+#distrib = resample(distrib,envi_data$gb_depth)
+#extent(envi_data$gb_depth) = extent(distrib)
+#depth = envi_data$gb_depth
+#depth_points <- depth * distrib
+#depth_points = rasterToPoints(depth_points)
+#depth_points <- data.frame(depth_points)
+distrib_points <- rasterToPoints(distrib)
+distrib_points <- data.frame(distrib_points)
+#distrib_points$depth = depth_points$layer
+
+# Visualiser la distribution des valeurs de profondeur
+#hist(depth_points$layer)
+hist(distrib_points$JOINT_DISTRIB_PREYS_PREDS_7)
+max = maxValue(distrib)
+min = minValue(distrib)
+# Choisir les intervalles de stratification (ici, 4 intervalles égaux)
+intervals <- quantile(distrib_points$JOINT_DISTRIB_PREYS_PREDS_7, probs = seq(0, 1, 0.25), na.rm = TRUE)
+# Créer une nouvelle variable de strate en fonction des intervalles choisis
+distrib_points$pres_strata <- cut(distrib_points$JOINT_DISTRIB_PREYS_PREDS_7, breaks = intervals, labels = FALSE)
+# Vérifier le résultat
+table(distrib_points$pres_strata)
+```
+
+```{r - GRTS METHOD}
+library(spsurvey)
+library(sf)
+#n_strata <- c(verydeep = 1, deep = 2, shallow = 3, veryshallow = 4)
+n_strata <- c("1" = 10 , "2" = 15, "3" = 25, "4" = 50)
+
+# Convert the data frame 'distrib_points' to an 'sf' object
+distrib_points_sf <- st_as_sf(distrib_points, coords = c("x", "y"))
+# Check for and remove missing values
+distrib_points_sf <- na.omit(distrib_points_sf)
+print(st_crs(distrib_points_sf))
+distrib_points_sf <- st_set_crs(distrib_points_sf, "EPSG:4326")
+distrib_points_sf <- st_transform(distrib_points_sf, crs = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs")
+eqprob_strat <- grts(distrib_points_sf, n_base = n_strata, stratum_var = "pres_strata")
+# Afficher les résultats
+print(eqprob_strat)
+plot(eqprob_strat, siteuse = "Base")
+coord = data.frame(latitude = eqprob_strat$sites_base$lat_WGS84, longitude = eqprob_strat$sites_base$lon_WGS84)
+###
+# Coordinates of the point to be added
+Ushuaia<- data.frame(longitude = -68.30, latitude = -54.81)
+#Ushuaia2<- data.frame(longitude = -68.30, latitude = -54.81)
+# Create a new row for the new point and append it to the beginning of 'coord_sp'
+coord <- rbind(Ushuaia, coord)
+#coord <- rbind(Ushuaia2, coord)
+###
+coord_sp <- SpatialPointsDataFrame(coords = coord[, c("longitude", "latitude")],
+                                   data = coord,
+                                   proj4string = CRS("+proj=longlat +datum=WGS84"))
+```
+
+```{r - SHOW SAMPLING POINTS}
+plot(basemap)
+SOplot(distrib, col = hcl.colors(80, "Viridis"))
+SOplot(coord_sp, pch = 20, col = "darkorange")
+SOmanagement(mpa = T, mpa_col = "red", domains = T, domains_col = "darkgreen")
+```
+
+```{r - VESSEL JOURNEY}
+library(TSP)
+library(sp)
+
+# Assuming 'coord_sp' is your sf object containing coordinates
+
+# Create a TSP instance using distances from 'coord_sp'
+tsp <- TSP(spDists(coord_sp))
+
+# Solve TSP using nearest insertion with the first point as the starting point
+tour <- solve_TSP(tsp, method = "arbitrary_insertion")
+
+# Create a dataframe for the sampling points
+echantillons <- as.data.frame(coord_sp)
+echantillons <- echantillons[, c("longitude", "latitude")]
+
+# Create a dataframe for the ordered trajectory points
+trajectoire_df <- echantillons[tour, ]
+
+# Créez une ligne simple (Line) à partir des coordonnées ordonnées
+ligne <- Line(coords = cbind(trajectoire_df$longitude, trajectoire_df$latitude))
+
+# Créez un objet de type Lines avec une ID unique pour le segment de ligne
+ligne_ID <- Lines(list(ligne), ID = "trajectory")
+
+# Créez un objet de type SpatialLines à partir de la ligne simple
+trajectoire_lines <- SpatialLines(list(ligne_ID), CRS("+proj=longlat +datum=WGS84"))
+
+# Créez une ligne simple (Line) entre le premier et le dernier point de trajectoire_df
+ligne_depart_arrivee <- Line(coords = rbind(trajectoire_df[1, c("longitude", "latitude")],
+                                            trajectoire_df[nrow(trajectoire_df),
+                                                           c("longitude", "latitude")]))
+# Créez un objet de type Lines avec une ID pour la ligne de départ/arrivée
+ligne_ID_depart_arrivee <- Lines(list(ligne_depart_arrivee), ID = "depart_arrivee")
+
+# Créez un nouvel objet SpatialLines avec la nouvelle ligne ajoutée
+trajectoire_lines <- SpatialLines(list(ligne_ID, ligne_ID_depart_arrivee), CRS("+proj=longlat +datum=WGS84"))
+
+# Affichez la carte avec la trajectoire, les points de départ/arrivée et la ligne entre eux
+plot(trajectoire_lines)
+```
+
+```{r}
+plot(basemap)
+SOplot(distrib, col = "darkgrey", legend = F)
+SOplot(coord_sp, pch = 20, col = "darkorange", cex = 2)
+SOplot(trajectoire_lines, col = "black", legend = F, lw = 2)
+SOplot(Ushuaia, col = "darkgreen", pch = 20, legend = F, cex = 4)
+```
+```{r - INTERACTIVE MAP - NOT WORKING}
+# Load the required libraries
+library(leaflet)
+
+# Define the proj4 definition for the stereographic polar projection centered on Antarctica
+proj4_antarctica <- "+proj=stere +lat_0=-90 +lat_ts=-71 +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
+
+# Create a custom CRS using leafletCRS with resolutions only
+crs_antarctica <- leafletCRS(crsClass = "L.Proj.CRS", code = "EPSG:6932", proj4def = proj4_antarctica, resolutions = 2^(22:0))
+
+# Create the leaflet map using the custom CRS
+map_antarctica <- leaflet(options = leafletOptions(crs = crs_antarctica)) %>%
+  # Add a base map (e.g., OpenStreetMap) using the custom CRS
+  addTiles() %>%
+  # Set the initial view centered on Antarctica
+  setView(lat = -90, lng = 0, zoom = 3) %>%
+  # Add the points of sampling on the map
+  addMarkers(data = echantillons, lng = ~longitude, lat = ~latitude) %>%
+  # Add the trajectory line on the map with a built-in color palette
+  addPolylines(data = trajectoire_df, color = ~colorNumeric(palette = "Blues", domain = progress_index), weight = 2)
+
+# Display the map
+map_antarctica
+
+```
+
+```{r}
+# Load required packages
+library(priorityqueue)
+library(raster)
+
+# Load your raster data and create a binary mask
+water_mask <- raster("Antarctica_water.nc")
+water_mask_binary <- ifelse(!is.na(getValues(water_mask)) & getValues(water_mask) == 1, 1, 0)
+
+# Define your points (nodes) based on trajectoire_df
+points <- trajectoire_df[, c("longitude", "latitude")]
+
+# Implement get_neighbors function based on your grid structure
+get_neighbors <- function(node, grid) {
+    # Implement logic to get neighboring nodes based on your grid structure
+    # Assume grid is a dataframe with columns "longitude" and "latitude"
+    # Assume node is an index or point within the grid
+    
+    # Get the coordinates of the current node
+    current_node <- grid[node, c("longitude", "latitude")]
+    
+    # Define a threshold distance for considering nodes as neighbors
+    threshold_distance <- 0.1  # Adjust this value based on your data
+    
+    # Find neighboring nodes within the threshold distance
+    neighboring_nodes <- which(sqrt((grid$longitude - current_node[1])^2 +
+                                    (grid$latitude - current_node[2])^2) <= threshold_distance)
+    
+    return(neighboring_nodes)
+    # Placeholder: return vector of neighboring node indices
+    return(c())
+}
+
+# Implement reconstruct_path function to backtrack and reconstruct the path
+reconstruct_path <- function(start, target, distances) {
+    # Backtrack from target to start using the recorded distances
+    # Placeholder: return vector of node indices representing the path
+    return(c())
+}
+
+# Apply Dijkstra's algorithm
+start_node <- 1  # Index of the start node
+target_node <- nrow(trajectoire_df)  # Index of the target node
+shortest_path <- dijkstra(points, start_node, target_node)
+
+# Reconstruct the path based on shortest_path
+path_indices <- reconstruct_path(start_node, target_node, distances)
+
+# Extract the actual path coordinates from points
+path <- points[path_indices, ]
+
+# Plot the shortest path on the map
+plot(trajectoire_lines)
+lines(path$longitude, path$latitude, col = "red", lwd = 2)
+
+```
+
